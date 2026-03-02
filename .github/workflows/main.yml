@@ -32,7 +32,7 @@ jobs:
       - name: Run Industrial Harvester
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TMDB_KEY: ${{ secrets.TMDB_API_KEY }}
         # We use a 5-hour timeout to stay safe within GitHub's 6-hour limit
         run: |
