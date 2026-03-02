@@ -3,7 +3,7 @@ import requests
 import time
 from supabase import create_client
 
-# 1. Setup Environment & Clients
+# Setup Environment
 URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 TMDB_KEY = os.environ.get("TMDB_KEY")
@@ -15,35 +15,53 @@ except Exception as e:
 
 def get_magnet(movie_title):
     """
-    Searches YTS for a high-quality magnet.
-    Cleans the title to improve search 'hit' rate.
+    Improved Magnet Search:
+    Uses browser headers to avoid being blocked by YTS anti-bot filters.
     """
-    # Remove special characters like ':' or '!' that break search
-    clean_title = "".join(c for c in movie_title if c.isalnum() or c.isspace())
+    # Clean title to keep only letters and numbers
+    clean_title = "".join(c for c in movie_title if c.isalnum() or c.isspace()).strip()
     
+    # PERFECTION: Browser Headers
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+
     try:
-        search_url = f"https://yts.mx/api/v2/list_movies.json?query_term={clean_title}&limit=1"
-        res = requests.get(search_url, timeout=10).json()
+        # Search YTS via query_term
+        search_url = "https://yts.mx/api/v2/list_movies.json"
+        params = {"query_term": clean_title, "limit": 1}
         
-        if res.get('data', {}).get('movie_count', 0) > 0:
-            movie_data = res['data']['movies'][0]
-            # Get the first torrent hash (usually 720p or 1080p)
-            torrent_hash = movie_data['torrents'][0]['hash']
-            magnet = f"magnet:?xt=urn:btih:{torrent_hash}&dn={clean_title.replace(' ', '+')}"
-            return magnet
-    except:
-        pass
+        response = requests.get(search_url, headers=headers, params=params, timeout=15)
+        
+        if response.status_code == 200:
+            res = response.json()
+            if res.get('data', {}).get('movie_count', 0) > 0:
+                movie_data = res['data']['movies'][0]
+                torrent_hash = movie_data['torrents'][0]['hash']
+                # Create the Magnet Link
+                magnet = f"magnet:?xt=urn:btih:{torrent_hash}&dn={clean_title.replace(' ', '+')}"
+                return magnet
+        else:
+            print(f"⚠️ YTS API error code: {response.status_code} for {clean_title}")
+            
+    except Exception as e:
+        print(f"⚠️ Search error for {movie_title}: {e}")
+    
     return None
 
 def run_hivescout():
-    print(f"--- 🚀 Starting HiveStream Deep Scout ---")
+    print(f"--- 🚀 Starting HiveStream Factory: Bot-Bypass Mode ---")
 
-    # TEST: Verify the searcher works with a known movie
+    # TEST: Inception must work now!
     print(f"🧪 Testing searcher with 'Inception'...")
     test_link = get_magnet("Inception")
-    print(f"✅ Test Result: {'Link Found' if test_link else 'Link NULL'}")
+    if test_link:
+        print(f"✅ Test Passed: Link Found!")
+    else:
+        print(f"❌ Test Failed: Still blocked. Check YTS status.")
 
-    # 2. Loop through 5 pages of Trending Movies (100 movies total)
     for page in range(1, 6):
         print(f"📄 Scraping TMDB Page {page}...")
         tmdb_url = f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_KEY}&page={page}"
@@ -57,10 +75,9 @@ def run_hivescout():
                 tmdb_id = str(movie.get('id'))
                 poster = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}"
                 
-                # 3. Scout for Magnet
+                # Scout for Magnet
                 magnet = get_magnet(title)
                 
-                # 4. Prepare Data for Supabase
                 data = {
                     "tmdb_id": tmdb_id,
                     "title": title,
@@ -70,16 +87,14 @@ def run_hivescout():
                     "last_verified": "now()"
                 }
 
-                # 5. Upsert (Update if exists, Insert if new)
                 try:
                     supabase.table("movie_mappings").upsert(data).execute()
-                    status_icon = "🔗" if magnet else "⏳"
-                    print(f"{status_icon} Synced: {title}")
+                    icon = "🔗" if magnet else "⌛"
+                    print(f"{icon} Synced: {title}")
                 except Exception as e:
-                    print(f"❌ DB Error for {title}: {e}")
+                    print(f"❌ DB Error: {e}")
                 
-                # Stay below rate limits (4 requests per second)
-                time.sleep(0.25)
+                time.sleep(0.5) # Politeness delay
 
         except Exception as e:
             print(f"❌ Page {page} failed: {e}")
