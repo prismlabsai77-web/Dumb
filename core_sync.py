@@ -8,61 +8,59 @@ url = os.environ.get("SUPABASE_URL")
 key = os.environ.get("SUPABASE_KEY")
 tmdb_key = os.environ.get("TMDB_KEY")
 
+def get_magnet(movie_title):
+    """Scouts a high-quality magnet link from YTS."""
+    try:
+        search_url = f"https://yts.mx/api/v2/list_movies.json?query_term={movie_title}&limit=1"
+        res = requests.get(search_url, timeout=10).json()
+        if res.get('data', {}).get('movie_count', 0) > 0:
+            hash = res['data']['movies'][0]['torrents'][0]['hash']
+            return f"magnet:?xt=urn:btih:{hash}&dn={movie_title.replace(' ', '+')}"
+    except:
+        pass
+    return None
+
 def run_hivescout():
-    print(f"--- 🚀 Starting HiveStream Factory (Rate Limit Protected) ---")
+    print(f"--- 🚀 Starting Deep Scout Factory ---")
+    supabase = create_client(url, key)
     
-    try:
-        supabase = create_client(url, key)
-        print("✅ Supabase Client Initialized")
-    except Exception as e:
-        print(f"❌ Supabase Init Error: {e}")
-        return
-
-    # TMDB Request
-    tmdb_url = f"https://api.themoviedb.org/3/trending/movie/day?api_key={tmdb_key}"
-    
-    try:
-        res = requests.get(tmdb_url)
-        # If we hit a rate limit (429), wait 10 seconds and try one more time
-        if res.status_code == 429:
-            print("⚠️ Rate limit hit. Cooling down for 10s...")
-            time.sleep(10)
-            res = requests.get(tmdb_url)
+    # PERFECTION: Loop through the first 5 pages (100 movies)
+    # Change '6' to '21' if you want 400 movies!
+    for page in range(1, 6): 
+        print(f"📄 Scraping TMDB Page {page}...")
+        tmdb_url = f"https://api.themoviedb.org/3/trending/movie/day?api_key={tmdb_key}&page={page}"
+        
+        try:
+            res = requests.get(tmdb_url).json()
+            movies = res.get('results', [])
             
-        if res.status_code != 200:
-            print(f"❌ TMDB API Error: {res.status_code} - {res.text}")
-            return
+            for movie in movies:
+                title = movie.get('title')
+                tmdb_id = str(movie.get('id'))
+                
+                # Check for magnet
+                magnet = get_magnet(title)
+                
+                data = {
+                    "tmdb_id": tmdb_id,
+                    "title": title,
+                    "magnet_url": magnet,
+                    "status": "ready" if magnet else "searching",
+                    "last_verified": "now()"
+                }
 
-        movies = res.json().get('results', [])
-        print(f"📦 Found {len(movies)} movies. Processing with throttle...")
-
-        for movie in movies:
-            title = movie.get('title', 'Unknown Title')
-            tmdb_id = str(movie.get('id'))
-            
-            data = {
-                "tmdb_id": tmdb_id,
-                "title": title,
-                "status": "active",
-                "last_verified": "now()"
-            }
-
-            try:
+                # Push to Supabase
                 supabase.table("movie_mappings").upsert(data).execute()
-                print(f"✅ Synced: {title}")
+                print(f"✅ Page {page} | Synced: {title}")
                 
-                # --- PERFECTION: THE THROTTLE ---
-                # We wait 0.25 seconds between movies. 
-                # This limits us to 4 requests/sec (way below the 40/sec limit).
-                time.sleep(0.25) 
-                
-            except Exception as e:
-                print(f"❌ Supabase Error for {title}: {e}")
+                # Throttle to stay safe
+                time.sleep(0.3) 
 
-    except Exception as e:
-        print(f"❌ Connection Error: {e}")
+        except Exception as e:
+            print(f"❌ Error on page {page}: {e}")
+            continue
 
-    print("--- 🏁 Factory Run Complete ---")
+    print("--- 🏁 Deep Scout Complete ---")
 
 if __name__ == "__main__":
     run_hivescout()
