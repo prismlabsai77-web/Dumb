@@ -38,6 +38,4 @@ jobs:
         run: |
           timeout 300m python3 core_sync.py || echo "Sync timed out, but state is saved in Supabase!"
 
-      - name: Keep-Alive (Hack)
-        # This keeps the repository active even if you don't commit for 60 days
-        uses: gautamkrishnar/keepalive-workflow@v1
+
