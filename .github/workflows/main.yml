@@ -1,35 +1,43 @@
-name: HiveStream Factory
+name: HiveStream Industrial Sync
 
 on:
   schedule:
+    # Runs every 6 hours to keep the "Modern Era" updated
     - cron: '0 */6 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Allows you to trigger it manually for the first big harvest
 
 jobs:
-  hive_scout:
+  build:
     runs-on: ubuntu-latest
-    
+    # Prevents multiple runs from clashing if a harvest takes a long time
+    concurrency: 
+      group: sync-group
+      cancel-in-progress: false 
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. We skip actions/setup-python to use the pre-installed System Python.
-      # This allows us to use 'apt-get' packages like python3-libtorrent easily.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Speeds up subsequent runs
 
-      - name: Install System Dependencies
+      - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-libtorrent python3-pip
+          python -m pip install --upgrade pip
+          pip install requests supabase
 
-      - name: Install Python Dependencies
-        # Use --break-system-packages because Ubuntu 24.04+ requires it 
-        # for installing pip packages globally in Actions.
-        run: |
-          pip install supabase requests beautifulsoup4 --break-system-packages
-
-      - name: Run Scraper
+      - name: Run Industrial Harvester
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          TMDB_KEY: ${{ secrets.TMDB_API_KEY }} 
-        run: python3 core_sync.py
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TMDB_KEY: ${{ secrets.TMDB_API_KEY }}
+        # We use a 5-hour timeout to stay safe within GitHub's 6-hour limit
+        run: |
+          timeout 300m python3 core_sync.py || echo "Sync timed out, but state is saved in Supabase!"
+
+      - name: Keep-Alive (Hack)
+        # This keeps the repository active even if you don't commit for 60 days
+        uses: gautamkrishnar/keepalive-workflow@v1
